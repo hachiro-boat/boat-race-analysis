@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 
 # 1. 学習済みモデルの読み込み
-model = YOLO('runs/detect/boat_race_yolo/weights/best.pt')
+model = YOLO('models/best.pt')
 
 # 2. テストしたい画像に対して検出を実行
 # ※ test.jpg の部分を、テストしたい画像ファイル名に変更してください
