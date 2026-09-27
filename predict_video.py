@@ -1,15 +1,28 @@
+import streamlit as st
 from ultralytics import YOLO
+import tempfile
+import cv2
 
-# 1. 学習済みモデルの読み込み
+st.title("ボートレース動画分析 (YOLOv8)")
+
+# モデルの読み込み
 model = YOLO('models/best.pt')
 
-# 2. 動画ファイルに対するトラッキング推論
-# ※ race_video.mp4 を実際にテストしたい動画ファイル名に変更してください
-results = model.track(
-    source='レコーディング 2026-09-27 082717.mp4', # 動画ファイルのパス
-    save=True,               # 検出結果動画を保存
-    conf=0.25,               # 確信度のしきい値（低すぎると誤検出、高すぎると見落とし）
-    tracker="bytetrack.yaml" # 追跡アルゴリズム（Bytetrack）
-)
+# 動画ファイルのアップロードUI
+uploaded_file = st.file_uploader("分析したい動画(mp4)を選択してください", type=['mp4', 'avi', 'mov'])
 
-print("動画の解析が完了しました！ runs/detect/track フォルダを確認してください。")
+if uploaded_file is not None:
+    # 一時ファイルとして保存
+    tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    tfile.write(uploaded_file.read())
+    
+    st.write("推論・追跡処理を実行中...")
+    
+    # アップロードされた動画に対して推論/追跡を実行
+    results = model.track(
+        source=tfile.name,
+        tracker="bytetrack.yaml",
+        show=False
+    )
+    
+    st.success("処理が完了しました！")
