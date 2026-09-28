@@ -117,23 +117,22 @@ if input_password == ADMIN_PASSWORD:
 
         submit_button = st.form_submit_button(label="データを記録・記憶する")
 
-if submit_button and input_password == ADMIN_PASSWORD:
-    if not racer_name.strip():
-        st.error("選手名を入力してください。")
-    else:
-        race_info_str = f"{year}年{month} / {stadium} / {rank}"
-        new_record = {
-            "選手名": racer_name.strip(),
-            "進入パターン": gap_pattern,
-            "レース情報": race_info_str,
-        }
-        st.session_state.records.append(new_record)
-        save_data(st.session_state.records)
-        st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）とレース情報（{race_info_str}）を記録・保存しました！")
+    if submit_button:
+        if not racer_name.strip():
+            st.error("選手名を入力してください。")
+        else:
+            race_info_str = f"{year}年{month} / {stadium} / {rank}"
+            new_record = {
+                "選手名": racer_name.strip(),
+                "進入パターン": gap_pattern,
+                "レース情報": race_info_str,
+            }
+            st.session_state.records.append(new_record)
+            save_data(st.session_state.records)
+            st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）とレース情報（{race_info_str}）を記録・保存しました！")
 
-st.markdown("---")
+    st.markdown("---")
 
-if input_password == ADMIN_PASSWORD:
     # --- 4. バックアップ & データ復元 ---
     st.subheader("💾 バックアップ & データ復元")
 
