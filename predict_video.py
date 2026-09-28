@@ -3,8 +3,11 @@ import pandas as pd
 import json
 import os
 
-# データの保存先ファイル名（自動作成されます）
+# データの保存先ファイル名
 DATA_FILE = "data.json"
+
+# --- 管理者用パスワード設定 ---
+ADMIN_PASSWORD = "4321"  # お好きなパスワードに変更してください
 
 st.set_page_config(page_title="ボートレース 進入・間隙データ記憶アプリ", layout="centered")
 
@@ -25,47 +28,11 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# セッション状態の初期化（ファイルから読み込み）
+# セッション状態の初期化
 if "records" not in st.session_state:
     st.session_state.records = load_data()
 
-# --- 1. データ入力エリア ---
-st.header("📝 進入データの記録")
-
-with st.form(key="entry_form", clear_on_submit=True):
-    col1, col2 = st.columns(2)
-    with col1:
-        racer_name = st.text_input("選手名（5号艇）", placeholder="例: 毒島誠")
-    with col2:
-        race_info = st.text_input("レース情報（任意）", placeholder="例: 住之江12R / 2026-09-28")
-
-    st.write("**どの艇とどの艇の間に入っていったかを選択してください**")
-    
-    col3, col4 = st.columns(2)
-    with col3:
-        left_boat = st.selectbox("左側の艇（内側など）", ["1号艇", "2号艇", "3号艇", "4号艇", "6号艇", "最内（差し切り）"])
-    with col4:
-        right_boat = st.selectbox("右側の艇（外側など）", ["1号艇", "2号艇", "3号艇", "4号艇", "6号艇", "最外（まくり）"])
-
-    submit_button = st.form_submit_button(label="データを記録・記憶する")
-
-if submit_button:
-    if not racer_name.strip():
-        st.error("選手名を入力してください。")
-    else:
-        gap_pattern = f"{left_boat} と {right_boat} の間"
-        new_record = {
-            "選手名": racer_name.strip(),
-            "進入パターン": gap_pattern,
-            "レース情報": race_info.strip() if race_info else "未入力",
-        }
-        st.session_state.records.append(new_record)
-        save_data(st.session_state.records)
-        st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）を記録・保存しました！")
-
-st.markdown("---")
-
-# --- 2. 名前検索＆集計エリア ---
+# --- 1. 名前検索＆集計エリア（誰でも閲覧可能） ---
 st.header("🔍 選手名でパターン・件数を検索")
 
 search_query = st.text_input("検索したい選手名を入力", placeholder="例: 毒島")
@@ -99,36 +66,83 @@ elif st.session_state.records:
 
 st.markdown("---")
 
-# --- 3. バックアップ・復元エリア ---
-st.header("💾 バックアップ & データ復元")
+# --- 2. 管理者認証エリア ---
+st.header("🔒 管理者メニュー（データ入力・バックアップ）")
 
-col_exp, col_imp = st.columns(2)
+input_password = st.text_input("管理者パスワードを入力してください", type="password")
 
-with col_exp:
-    st.subheader("📥 バックアップ（保存）")
-    if st.session_state.records:
-        df_export = pd.DataFrame(st.session_state.records)
-        csv_data = df_export.to_csv(index=False, encoding="utf-8-sig")
-        st.download_button(
-            label="CSVでバックアップをダウンロード",
-            data=csv_data,
-            file_name="boat_race_data_backup.csv",
-            mime="text/csv",
-        )
-    else:
-        st.caption("記録データがないためダウンロードできません。")
+if input_password == ADMIN_PASSWORD:
+    st.success("認証に成功しました。管理メニューを利用できます。")
+    
+    # --- 3. 進入データの記録 ---
+    st.subheader("📝 進入データの記録")
 
-with col_imp:
-    st.subheader("📤 バックアップから復元")
-    uploaded_csv = st.file_uploader("保存したCSVファイルをアップロード", type=["csv"])
-    if uploaded_csv is not None:
-        try:
-            imported_df = pd.read_csv(uploaded_csv)
-            imported_records = imported_df.to_dict(orient="records")
-            if st.button("このデータをアプリに復元・統合する"):
-                st.session_state.records.extend(imported_records)
-                save_data(st.session_state.records)
-                st.success("データの復元が完了しました！")
-                st.rerun()
-        except Exception as e:
-            st.error("CSVファイルの読み込みに失敗しました。")
+    with st.form(key="entry_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            racer_name = st.text_input("選手名（5号艇）", placeholder="例: 毒島誠")
+        with col2:
+            race_info = st.text_input("レース情報（任意）", placeholder="例: 住之江12R / 2026-09-28")
+
+        st.write("**どの艇とどの艇の間に入っていったかを選択してください**")
+        
+        col3, col4 = st.columns(2)
+        with col3:
+            left_boat = st.selectbox("左側の艇（内側など）", ["1号艇", "2号艇", "3号艇", "4号艇", "6号艇", "最内（差し切り）"])
+        with col4:
+            right_boat = st.selectbox("右側の艇（外側など）", ["1号艇", "2号艇", "3号艇", "4号艇", "6号艇", "最外（まくり）"])
+
+        submit_button = st.form_submit_button(label="データを記録・記憶する")
+
+    if submit_button:
+        if not racer_name.strip():
+            st.error("選手名を入力してください。")
+        else:
+            gap_pattern = f"{left_boat} と {right_boat} の間"
+            new_record = {
+                "選手名": racer_name.strip(),
+                "進入パターン": gap_pattern,
+                "レース情報": race_info.strip() if race_info else "未入力",
+            }
+            st.session_state.records.append(new_record)
+            save_data(st.session_state.records)
+            st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）を記録・保存しました！")
+
+    st.markdown("---")
+
+    # --- 4. バックアップ & データ復元 ---
+    st.subheader("💾 バックアップ & データ復元")
+
+    col_exp, col_imp = st.columns(2)
+
+    with col_exp:
+        st.caption("📥 バックアップ（保存）")
+        if st.session_state.records:
+            df_export = pd.DataFrame(st.session_state.records)
+            csv_data = df_export.to_csv(index=False, encoding="utf-8-sig")
+            st.download_button(
+                label="CSVでバックアップをダウンロード",
+                data=csv_data,
+                file_name="boat_race_data_backup.csv",
+                mime="text/csv",
+            )
+        else:
+            st.caption("記録データがないためダウンロードできません。")
+
+    with col_imp:
+        st.caption("📤 バックアップから復元")
+        uploaded_csv = st.file_uploader("保存したCSVファイルをアップロード", type=["csv"])
+        if uploaded_csv is not None:
+            try:
+                imported_df = pd.read_csv(uploaded_csv)
+                imported_records = imported_df.to_dict(orient="records")
+                if st.button("このデータをアプリに復元・統合する"):
+                    st.session_state.records.extend(imported_records)
+                    save_data(st.session_state.records)
+                    st.success("データの復元が完了しました！")
+                    st.rerun()
+            except Exception as e:
+                st.error("CSVファイルの読み込みに失敗しました。")
+
+elif input_password:
+    st.error("パスワードが正しくありません。")
