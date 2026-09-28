@@ -7,7 +7,7 @@ import os
 DATA_FILE = "data.json"
 
 # --- 管理者用パスワード設定 ---
-ADMIN_PASSWORD = "4321"  # お好きなパスワードに変更してください
+ADMIN_PASSWORD = "1234"  # お好きなパスワードに変更してください
 
 st.set_page_config(page_title="ボートレース 進入・間隙データ記憶アプリ", layout="centered")
 
@@ -50,7 +50,7 @@ if search_query.strip():
         st.write(f"総記録件数: **{len(filtered)} 件**")
         
         summary = df["進入パターン"].value_counts().reset_index()
-        summary.columns = ["進入パターン（どの艇の間か）", "件数"]
+        summary.columns = ["進入パターン（どこに入ったか）", "件数"]
         
         st.table(summary)
         
@@ -84,13 +84,17 @@ if input_password == ADMIN_PASSWORD:
         with col2:
             race_info = st.text_input("レース情報（任意）", placeholder="例: 住之江12R / 2026-09-28")
 
-        st.write("**どの艇とどの艇の間に入っていったかを選択してください**")
-        
-        col3, col4 = st.columns(2)
-        with col3:
-            left_boat = st.selectbox("左側の艇（内側など）", ["1号艇", "2号艇", "3号艇", "4号艇", "6号艇", "最内（差し切り）"])
-        with col4:
-            right_boat = st.selectbox("右側の艇（外側など）", ["1号艇", "2号艇", "3号艇", "4号艇", "6号艇", "最外（まくり）"])
+        # 5つの進入パターンから選択
+        gap_pattern = st.selectbox(
+            "5号艇の進入位置を選択してください",
+            [
+                "最内",
+                "4号艇と2号艇の間",
+                "2号艇と1号艇の間",
+                "1号艇と3号艇の間",
+                "最外"
+            ]
+        )
 
         submit_button = st.form_submit_button(label="データを記録・記憶する")
 
@@ -98,7 +102,6 @@ if input_password == ADMIN_PASSWORD:
         if not racer_name.strip():
             st.error("選手名を入力してください。")
         else:
-            gap_pattern = f"{left_boat} と {right_boat} の間"
             new_record = {
                 "選手名": racer_name.strip(),
                 "進入パターン": gap_pattern,
