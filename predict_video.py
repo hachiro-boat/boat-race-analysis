@@ -2,12 +2,21 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+from datetime import datetime
 
 # データの保存先ファイル名
 DATA_FILE = "data.json"
 
 # --- 管理者用パスワード設定 ---
 ADMIN_PASSWORD = "1234"  # お好きなパスワードに変更してください
+
+# 全国24場リスト
+BOAT_RACE_STADIUMS = [
+    "桐生", "戸田", "江戸川", "平和島", "多摩川", "浜名湖",
+    "蒲郡", "常滑", "津", "三国", "びわこ", "住之江",
+    "尼崎", "鳴門", "丸亀", "児島", "宮島", "徳山",
+    "下関", "若松", "芦屋", "福岡", "唐津", "大村"
+]
 
 st.set_page_config(page_title="ボートレース 進入・間隙データ記憶アプリ", layout="centered")
 
@@ -78,11 +87,7 @@ if input_password == ADMIN_PASSWORD:
     st.subheader("📝 進入データの記録")
 
     with st.form(key="entry_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            racer_name = st.text_input("選手名（5号艇）", placeholder="例: 毒島誠")
-        with col2:
-            race_info = st.text_input("レース情報（任意）", placeholder="例: 住之江12R / 2026-09-28")
+        racer_name = st.text_input("選手名（5号艇）", placeholder="例: 毒島誠")
 
         # 5つの進入パターンから選択
         gap_pattern = st.selectbox(
@@ -96,23 +101,39 @@ if input_password == ADMIN_PASSWORD:
             ]
         )
 
+        st.markdown("**レース情報の詳細選択**")
+        col_stadium, col_rank = st.columns(2)
+        with col_stadium:
+            stadium = st.selectbox("開催場（全国24場）", BOAT_RACE_STADIUMS)
+        with col_rank:
+            rank = st.selectbox("着順", ["1着", "2着", "3着", "4着", "5着", "6着", "転覆・落水・F等"])
+
+        col_year, col_month = st.columns(2)
+        current_year = datetime.now().year
+        with col_year:
+            year = st.selectbox("年（西暦）", list(range(current_year, 2019, -1)))
+        with col_month:
+            month = st.selectbox("月", [f"{m}月" for m in range(1, 13)])
+
         submit_button = st.form_submit_button(label="データを記録・記憶する")
 
-    if submit_button:
-        if not racer_name.strip():
-            st.error("選手名を入力してください。")
-        else:
-            new_record = {
-                "選手名": racer_name.strip(),
-                "進入パターン": gap_pattern,
-                "レース情報": race_info.strip() if race_info else "未入力",
-            }
-            st.session_state.records.append(new_record)
-            save_data(st.session_state.records)
-            st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）を記録・保存しました！")
+if submit_button and input_password == ADMIN_PASSWORD:
+    if not racer_name.strip():
+        st.error("選手名を入力してください。")
+    else:
+        race_info_str = f"{year}年{month} / {stadium} / {rank}"
+        new_record = {
+            "選手名": racer_name.strip(),
+            "進入パターン": gap_pattern,
+            "レース情報": race_info_str,
+        }
+        st.session_state.records.append(new_record)
+        save_data(st.session_state.records)
+        st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）とレース情報（{race_info_str}）を記録・保存しました！")
 
-    st.markdown("---")
+st.markdown("---")
 
+if input_password == ADMIN_PASSWORD:
     # --- 4. バックアップ & データ復元 ---
     st.subheader("💾 バックアップ & データ復元")
 
