@@ -1,13 +1,33 @@
 import streamlit as st
 import pandas as pd
+import json
+import os
+
+# データの保存先ファイル名
+DATA_FILE = "data.json"
 
 st.set_page_config(page_title="ボートレース 進入・間隙データ記憶アプリ", layout="centered")
 
 st.title("🚤 5号艇 進入・間隙データ記録・検索アプリ")
 
-# データ記憶領域（Session State）の初期化
+# --- ファイルからデータを読み込む関数 ---
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+# --- データをファイルに保存する関数 ---
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+# セッション状態の初期化（ファイルから読み込み）
 if "records" not in st.session_state:
-    st.session_state.records = []
+    st.session_state.records = load_data()
 
 # --- 1. データ入力エリア ---
 st.header("📝 進入データの記録")
@@ -39,8 +59,11 @@ if submit_button:
             "進入パターン": gap_pattern,
             "レース情報": race_info.strip() if race_info else "未入力",
         }
+        # 画面上の記憶に追加
         st.session_state.records.append(new_record)
-        st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）を記録しました！")
+        # ファイルに保存（永続化）
+        save_data(st.session_state.records)
+        st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）を記録・保存しました！")
 
 st.markdown("---")
 
@@ -76,6 +99,6 @@ if search_query.strip():
         st.warning(f"「{search_query}」選手の記録データは見つかりませんでした。")
 
 elif st.session_state.records:
-    st.info(f"💡 現在、合計 **{len(st.session_state.records)} 件** のデータが記憶されています。")
+    st.info(f"💡 現在、合計 **{len(st.session_state.records)} 件** のデータが記録・保存されています。")
     with st.expander("全記録一覧を表示"):
         st.dataframe(pd.DataFrame(st.session_state.records), use_container_width=True)
