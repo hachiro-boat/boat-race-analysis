@@ -72,7 +72,7 @@ df_all = pd.DataFrame(all_parsed) if all_parsed else pd.DataFrame()
 tab1, tab2 = st.tabs(["🔍 選手名で検索", "🏟️ ボートレース場分析"])
 
 # ---------------------------------------------------------
-# TAB 1: 選手名検索
+# TAB 1: 選手名検索（パーセンテージ対応版）
 # ---------------------------------------------------------
 with tab1:
     st.header("🔍 選手名でパターン・件数を検索")
@@ -82,13 +82,46 @@ with tab1:
         filtered_df = df_all[df_all["選手名"].str.lower().str.contains(search_query.strip().lower(), na=False)]
         
         if not filtered_df.empty:
-            st.subheader(f"📊 「{search_query}」選手の検索結果")
-            st.write(f"総記録件数: **{len(filtered_df)} 件**")
+            racer_total = len(filtered_df)
+            st.subheader(f"📊 「{search_query}」選手の検索結果 (全 {racer_total} 件)")
             
-            summary = filtered_df["進入パターン"].value_counts().reset_index()
-            summary.columns = ["進入パターン", "件数"]
-            st.table(summary)
+            # --- 1. 進入パターンのパーセンテージ集計 ---
+            st.markdown("### 1. 進入パターンの選択割合（%）")
+            pattern_counts = filtered_df["進入パターン"].value_counts()
+            pattern_data = []
+            for pat in GAP_PATTERNS:
+                cnt = pattern_counts.get(pat, 0)
+                pct = (cnt / racer_total * 100) if racer_total > 0 else 0
+                pattern_data.append({
+                    "進入パターン": pat,
+                    "件数": f"{cnt} 件",
+                    "選択割合 (%)": f"{pct:.1f} %"
+                })
+            st.table(pd.DataFrame(pattern_data))
             
+            # --- 2. 各進入パターンごとの着順内訳（%） ---
+            st.markdown("### 2. 進入パターンごとの着順割合（%）")
+            for pat in GAP_PATTERNS:
+                pat_df = filtered_df[filtered_df["進入パターン"] == pat]
+                pat_total = len(pat_df)
+                
+                with st.expander(f"📍 進入パターン: 【{pat}】 (該当データ: {pat_total} 件)"):
+                    if pat_total > 0:
+                        rank_counts = pat_df["着順"].value_counts()
+                        rank_data = []
+                        all_ranks = ["1着", "2着", "3着", "4着", "5着", "6着", "転覆・落水・F等"]
+                        for r in all_ranks:
+                            r_cnt = rank_counts.get(r, 0)
+                            r_pct = (r_cnt / pat_total * 100)
+                            rank_data.append({
+                                "着順": r,
+                                "件数": f"{r_cnt} 件",
+                                "着順割合 (%)": f"{r_pct:.1f} %"
+                            })
+                        st.table(pd.DataFrame(rank_data))
+                    else:
+                        st.caption("※この進入パターンの記録はまだありません。")
+
             with st.expander("詳細な記録一覧を見る"):
                 st.dataframe(filtered_df[["選手名", "進入パターン", "レース情報"]], use_container_width=True)
         else:
@@ -117,7 +150,6 @@ with tab2:
             
             # --- 1. 進入パターンのパーセンテージ集計 ---
             st.markdown("### 1. 進入パターンの出現割合（%）")
-            
             pattern_counts = stadium_df["進入パターン"].value_counts()
             pattern_data = []
             for pat in GAP_PATTERNS:
@@ -128,12 +160,10 @@ with tab2:
                     "件数": f"{cnt} 件",
                     "割合 (%)": f"{pct:.1f} %"
                 })
-            
             st.table(pd.DataFrame(pattern_data))
             
             # --- 2. 各進入パターンごとの着順内訳（%） ---
             st.markdown("### 2. 進入パターンごとの着順割合（%）")
-            
             for pat in GAP_PATTERNS:
                 pat_df = stadium_df[stadium_df["進入パターン"] == pat]
                 pat_total = len(pat_df)
@@ -142,7 +172,6 @@ with tab2:
                     if pat_total > 0:
                         rank_counts = pat_df["着順"].value_counts()
                         rank_data = []
-                        # 1着〜6着、その他を順に集計
                         all_ranks = ["1着", "2着", "3着", "4着", "5着", "6着", "転覆・落水・F等"]
                         for r in all_ranks:
                             r_cnt = rank_counts.get(r, 0)
@@ -176,7 +205,6 @@ if input_password == ADMIN_PASSWORD:
     with st.form(key="entry_form", clear_on_submit=True):
         racer_name = st.text_input("選手名（5号艇）", placeholder="例: 毒島誠")
 
-        # 5つの進入パターンから選択
         gap_pattern = st.selectbox("5号艇の進入位置を選択してください", GAP_PATTERNS)
 
         st.markdown("**レース情報の詳細選択**")
