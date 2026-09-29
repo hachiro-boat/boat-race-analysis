@@ -18,9 +18,18 @@ BOAT_RACE_STADIUMS = [
     "下関", "若松", "芦屋", "福岡", "唐津", "大村"
 ]
 
+# 進入パターンの固定リスト
+GAP_PATTERNS = [
+    "最内",
+    "4号艇と2号艇の間",
+    "2号艇と1号艇の間",
+    "1号艇と3号艇の間",
+    "最外"
+]
+
 st.set_page_config(page_title="ボートレース 進入・間隙データ記憶アプリ", layout="centered")
 
-st.title("🚤 5号艇 進入・間隙データ記録・検索アプリ")
+st.title("🚤 5号艇 進入・間隙データ記録・分析アプリ")
 
 # --- ファイルからデータを読み込む関数 ---
 def load_data():
@@ -41,41 +50,119 @@ def save_data(data):
 if "records" not in st.session_state:
     st.session_state.records = load_data()
 
-# --- 1. 名前検索＆集計エリア（誰でも閲覧可能） ---
-st.header("🔍 選手名でパターン・件数を検索")
+# --- レース情報文字列から「開催場」と「着順」を分解取得する補助関数 ---
+def parse_record(rec):
+    race_info = rec.get("レース情報", "")
+    parts = [p.strip() for p in race_info.split("/")]
+    stadium = parts[1] if len(parts) >= 2 else "不明"
+    rank = parts[2] if len(parts) >= 3 else "不明"
+    return {
+        "選手名": rec.get("選手名", ""),
+        "進入パターン": rec.get("進入パターン", ""),
+        "開催場": stadium,
+        "着順": rank,
+        "レース情報": race_info
+    }
 
-search_query = st.text_input("検索したい選手名を入力", placeholder="例: 毒島")
+# データフレームの準備
+all_parsed = [parse_record(r) for r in st.session_state.records]
+df_all = pd.DataFrame(all_parsed) if all_parsed else pd.DataFrame()
 
-if search_query.strip():
-    filtered = [
-        rec for rec in st.session_state.records 
-        if search_query.strip().lower() in rec["選手名"].lower()
-    ]
-    
-    if filtered:
-        df = pd.DataFrame(filtered)
+# --- タブ分け（検索・集計） ---
+tab1, tab2 = st.tabs(["🔍 選手名で検索", "🏟️ ボートレース場分析"])
+
+# ---------------------------------------------------------
+# TAB 1: 選手名検索
+# ---------------------------------------------------------
+with tab1:
+    st.header("🔍 選手名でパターン・件数を検索")
+    search_query = st.text_input("検索したい選手名を入力", placeholder="例: 毒島")
+
+    if search_query.strip() and not df_all.empty:
+        filtered_df = df_all[df_all["選手名"].str.lower().str.contains(search_query.strip().lower(), na=False)]
         
-        st.subheader(f"📊 「{search_query}」選手の検索結果")
-        st.write(f"総記録件数: **{len(filtered)} 件**")
-        
-        summary = df["進入パターン"].value_counts().reset_index()
-        summary.columns = ["進入パターン（どこに入ったか）", "件数"]
-        
-        st.table(summary)
-        
-        with st.expander("詳細な記録一覧を見る"):
-            st.dataframe(df, use_container_width=True)
+        if not filtered_df.empty:
+            st.subheader(f"📊 「{search_query}」選手の検索結果")
+            st.write(f"総記録件数: **{len(filtered_df)} 件**")
+            
+            summary = filtered_df["進入パターン"].value_counts().reset_index()
+            summary.columns = ["進入パターン", "件数"]
+            st.table(summary)
+            
+            with st.expander("詳細な記録一覧を見る"):
+                st.dataframe(filtered_df[["選手名", "進入パターン", "レース情報"]], use_container_width=True)
+        else:
+            st.warning(f"「{search_query}」選手の記録データは見つかりませんでした。")
+    elif not df_all.empty:
+        st.info(f"💡 現在、合計 **{len(df_all)} 件** のデータが記録・保存されています。")
+        with st.expander("全記録一覧を表示"):
+            st.dataframe(df_all[["選手名", "進入パターン", "レース情報"]], use_container_width=True)
     else:
-        st.warning(f"「{search_query}」選手の記録データは見つかりませんでした。")
+        st.info("まだ記録データがありません。")
 
-elif st.session_state.records:
-    st.info(f"💡 現在、合計 **{len(st.session_state.records)} 件** のデータが記録・保存されています。")
-    with st.expander("全記録一覧を表示"):
-        st.dataframe(pd.DataFrame(st.session_state.records), use_container_width=True)
+# ---------------------------------------------------------
+# TAB 2: ボートレース場別分析
+# ---------------------------------------------------------
+with tab2:
+    st.header("🏟️ ボートレース場別の進入・着順割合分析")
+    
+    selected_stadium = st.selectbox("分析したいレース場を選択してください", BOAT_RACE_STADIUMS)
+    
+    if not df_all.empty:
+        stadium_df = df_all[df_all["開催場"] == selected_stadium]
+        
+        if not stadium_df.empty:
+            total_count = len(stadium_df)
+            st.subheader(f"📊 【{selected_stadium}】の集計結果 (全 {total_count} 件)")
+            
+            # --- 1. 進入パターンのパーセンテージ集計 ---
+            st.markdown("### 1. 進入パターンの出現割合（%）")
+            
+            pattern_counts = stadium_df["進入パターン"].value_counts()
+            pattern_data = []
+            for pat in GAP_PATTERNS:
+                cnt = pattern_counts.get(pat, 0)
+                pct = (cnt / total_count * 100) if total_count > 0 else 0
+                pattern_data.append({
+                    "進入パターン": pat,
+                    "件数": f"{cnt} 件",
+                    "割合 (%)": f"{pct:.1f} %"
+                })
+            
+            st.table(pd.DataFrame(pattern_data))
+            
+            # --- 2. 各進入パターンごとの着順内訳（%） ---
+            st.markdown("### 2. 進入パターンごとの着順割合（%）")
+            
+            for pat in GAP_PATTERNS:
+                pat_df = stadium_df[stadium_df["進入パターン"] == pat]
+                pat_total = len(pat_df)
+                
+                with st.expander(f"📍 進入パターン: 【{pat}】 (該当データ: {pat_total} 件)"):
+                    if pat_total > 0:
+                        rank_counts = pat_df["着順"].value_counts()
+                        rank_data = []
+                        # 1着〜6着、その他を順に集計
+                        all_ranks = ["1着", "2着", "3着", "4着", "5着", "6着", "転覆・落水・F等"]
+                        for r in all_ranks:
+                            r_cnt = rank_counts.get(r, 0)
+                            r_pct = (r_cnt / pat_total * 100)
+                            rank_data.append({
+                                "着順": r,
+                                "件数": f"{r_cnt} 件",
+                                "着順割合 (%)": f"{r_pct:.1f} %"
+                            })
+                        st.table(pd.DataFrame(rank_data))
+                    else:
+                        st.caption("※この進入パターンの記録はまだありません。")
+        else:
+            st.warning(f"「{selected_stadium}」での記録データはまだ登録されていません。")
+    else:
+        st.info("データが登録されると、場ごとの割合が表示されます。")
 
 st.markdown("---")
 
-# --- 2. 管理者認証エリア ---
+# --- 3. 管理者認証エリア ---
 st.header("🔒 管理者メニュー（データ入力・バックアップ）")
 
 input_password = st.text_input("管理者パスワードを入力してください", type="password")
@@ -83,23 +170,14 @@ input_password = st.text_input("管理者パスワードを入力してくださ
 if input_password == ADMIN_PASSWORD:
     st.success("認証に成功しました。管理メニューを利用できます。")
     
-    # --- 3. 進入データの記録 ---
+    # --- 進入データの記録 ---
     st.subheader("📝 進入データの記録")
 
     with st.form(key="entry_form", clear_on_submit=True):
         racer_name = st.text_input("選手名（5号艇）", placeholder="例: 毒島誠")
 
         # 5つの進入パターンから選択
-        gap_pattern = st.selectbox(
-            "5号艇の進入位置を選択してください",
-            [
-                "最内",
-                "4号艇と2号艇の間",
-                "2号艇と1号艇の間",
-                "1号艇と3号艇の間",
-                "最外"
-            ]
-        )
+        gap_pattern = st.selectbox("5号艇の進入位置を選択してください", GAP_PATTERNS)
 
         st.markdown("**レース情報の詳細選択**")
         col_stadium, col_rank = st.columns(2)
@@ -130,10 +208,11 @@ if input_password == ADMIN_PASSWORD:
             st.session_state.records.append(new_record)
             save_data(st.session_state.records)
             st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）とレース情報（{race_info_str}）を記録・保存しました！")
+            st.rerun()
 
     st.markdown("---")
 
-    # --- 4. バックアップ & データ復元 ---
+    # --- バックアップ & データ復元 ---
     st.subheader("💾 バックアップ & データ復元")
 
     col_exp, col_imp = st.columns(2)
