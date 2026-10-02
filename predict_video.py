@@ -1,11 +1,46 @@
 import streamlit as st
 import pandas as pd
-import json
-import os
 from datetime import datetime
+import gspread
+from google.oauth2.service_account import Credentials
 
-# データの保存先ファイル名
-DATA_FILE = "data.json"
+# --- 1. Google スプレッドシート接続設定 ---
+# ご自身のスプレッドシートURL（/d/ と /edit の間の文字列）に置き換えてください
+SPREADSHEET_ID = "1uPIw3EBMDd3HYnaAuoAomCCC6eVui85P6bpxbDnaBCc"
+
+def get_gspread_client():
+    """Streamlit Secrets から Google サービスアカウント認証情報を取得"""
+    SCOPE = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=SCOPE
+    )
+    return gspread.authorize(creds)
+
+def load_data_from_sheets():
+    """スプレッドシートからデータを取得"""
+    try:
+        client = get_gspread_client()
+        sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+        data = sheet.get_all_records()
+        return data
+    except Exception as e:
+        st.error(f"スプレッドシートからのデータ取得に失敗しました: {e}")
+        return []
+
+def append_data_to_sheets(racer_name, gap_pattern, race_info_str):
+    """スプレッドシートに1行データを追加"""
+    try:
+        client = get_gspread_client()
+        sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+        sheet.append_row([racer_name, gap_pattern, race_info_str])
+        return True
+    except Exception as e:
+        st.error(f"スプレッドシートへの保存に失敗しました: {e}")
+        return False
 
 # --- 管理者用パスワード設定 ---
 ADMIN_PASSWORD = "1234"  # お好きなパスワードに変更してください
@@ -31,29 +66,13 @@ st.set_page_config(page_title="ボートレース 進入・間隙データ記憶
 
 st.title("🚤 5号艇 進入・間隙データ記録・分析アプリ")
 
-# --- ファイルからデータを読み込む関数 ---
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return []
-    return []
-
-# --- データをファイルに保存する関数 ---
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-# セッション状態の初期化
-if "records" not in st.session_state:
-    st.session_state.records = load_data()
+# データの読み込み（スプレッドシートから最新データを取得）
+records = load_data_from_sheets()
 
 # --- レース情報文字列から「開催場」と「着順」を分解取得する補助関数 ---
 def parse_record(rec):
     race_info = rec.get("レース情報", "")
-    parts = [p.strip() for p in race_info.split("/")]
+    parts = [p.strip() for p in str(race_info).split("/")]
     stadium = parts[1] if len(parts) >= 2 else "不明"
     rank = parts[2] if len(parts) >= 3 else "不明"
     return {
@@ -65,7 +84,7 @@ def parse_record(rec):
     }
 
 # データフレームの準備
-all_parsed = [parse_record(r) for r in st.session_state.records]
+all_parsed = [parse_record(r) for r in records]
 df_all = pd.DataFrame(all_parsed) if all_parsed else pd.DataFrame()
 
 # --- タブ分け（検索・集計） ---
@@ -79,7 +98,7 @@ with tab1:
     search_query = st.text_input("検索したい選手名を入力", placeholder="例: 毒島")
 
     if search_query.strip() and not df_all.empty:
-        filtered_df = df_all[df_all["選手名"].str.lower().str.contains(search_query.strip().lower(), na=False)]
+        filtered_df = df_all[df_all["選手名"].astype(str).str.lower().str.contains(search_query.strip().lower(), na=False)]
         
         if not filtered_df.empty:
             racer_total = len(filtered_df)
@@ -221,22 +240,18 @@ if input_password == ADMIN_PASSWORD:
         with col_month:
             month = st.selectbox("月", [f"{m}月" for m in range(1, 13)])
 
-        submit_button = st.form_submit_button(label="データを記録・記憶する")
+        submit_button = st.form_submit_button(label="データを記録・スプレッドシートに保存")
 
     if submit_button:
         if not racer_name.strip():
             st.error("選手名を入力してください。")
         else:
             race_info_str = f"{year}年{month} / {stadium} / {rank}"
-            new_record = {
-                "選手名": racer_name.strip(),
-                "進入パターン": gap_pattern,
-                "レース情報": race_info_str,
-            }
-            st.session_state.records.append(new_record)
-            save_data(st.session_state.records)
-            st.success(f"「{racer_name}」選手の進入パターン（{gap_pattern}）とレース情報（{race_info_str}）を記録・保存しました！")
-            st.rerun()
+            
+            # スプレッドシートへ直接書き込み
+            if append_data_to_sheets(racer_name.strip(), gap_pattern, race_info_str):
+                st.success(f"「{racer_name}」選手のデータをスプレッドシートに自動保存しました！")
+                st.rerun()
 
     st.markdown("---")
 
@@ -247,9 +262,8 @@ if input_password == ADMIN_PASSWORD:
 
     with col_exp:
         st.caption("📥 バックアップ（保存）")
-        if st.session_state.records:
-            df_export = pd.DataFrame(st.session_state.records)
-            csv_data = df_export.to_csv(index=False, encoding="utf-8-sig")
+        if not df_all.empty:
+            csv_data = df_all[["選手名", "進入パターン", "レース情報"]].to_csv(index=False, encoding="utf-8-sig")
             st.download_button(
                 label="CSVでバックアップをダウンロード",
                 data=csv_data,
@@ -260,16 +274,17 @@ if input_password == ADMIN_PASSWORD:
             st.caption("記録データがないためダウンロードできません。")
 
     with col_imp:
-        st.caption("📤 バックアップから復元")
+        st.caption("📤 バックアップから一括復元")
         uploaded_csv = st.file_uploader("保存したCSVファイルをアップロード", type=["csv"])
         if uploaded_csv is not None:
             try:
                 imported_df = pd.read_csv(uploaded_csv)
-                imported_records = imported_df.to_dict(orient="records")
-                if st.button("このデータをアプリに復元・統合する"):
-                    st.session_state.records.extend(imported_records)
-                    save_data(st.session_state.records)
-                    st.success("データの復元が完了しました！")
+                if st.button("このデータをスプレッドシートに追加・復元する"):
+                    client = get_gspread_client()
+                    sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+                    for _, row in imported_df.iterrows():
+                        sheet.append_row([row.get("選手名", ""), row.get("進入パターン", ""), row.get("レース情報", "")])
+                    st.success("スプレッドシートへの復元・統合が完了しました！")
                     st.rerun()
             except Exception as e:
                 st.error("CSVファイルの読み込みに失敗しました。")
