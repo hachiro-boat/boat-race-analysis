@@ -14,11 +14,32 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Secrets の辞書をコピーして private_key の改行コードを補正
+    
+    # Secretsの辞書をコピー
     creds_dict = dict(st.secrets["gcp_service_account"])
+    
     if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        pk = creds_dict["private_key"]
+        # エスケープ文字 \n の置換
+        pk = pk.replace("\\n", "\n")
         
+        # PEMのヘッダー/フッター部分と鍵本体を整理してパディングズレを防止
+        if "-----BEGIN PRIVATE KEY-----" in pk:
+            lines = [line.strip() for line in pk.strip().split("\n") if line.strip()]
+            header = "-----BEGIN PRIVATE KEY-----"
+            footer = "-----END PRIVATE KEY-----"
+            body_lines = [l for l in lines if not l.startswith("-----")]
+            body = "".join(body_lines)
+            
+            # Base64パディング(=)の補正
+            missing_padding = len(body) % 4
+            if missing_padding:
+                body += "=" * (4 - missing_padding)
+                
+            # 64文字ごとに改行して正しいPEM形式を再構築
+            chunked_body = "\n".join([body[i:i+64] for i in range(0, len(body), 64)])
+            creds_dict["private_key"] = f"{header}\n{chunked_body}\n{footer}\n"
+
     creds = Credentials.from_service_account_info(
         creds_dict,
         scopes=SCOPE
