@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
@@ -8,38 +9,20 @@ from google.oauth2.service_account import Credentials
 # ご自身のスプレッドシートURL（/d/ と /edit の間の文字列）に置き換えてください
 SPREADSHEET_ID = "1uPIw3EBMDd3HYnaAuoAomCCC6eVui85P6bpxbDnaBCc"
 
+import json
+
 def get_gspread_client():
     """Streamlit Secrets から Google サービスアカウント認証情報を取得"""
     SCOPE = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    
-    # Secretsの辞書をコピー
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    
-    if "private_key" in creds_dict:
-        pk = creds_dict["private_key"]
-        # エスケープ文字 \n の置換
-        pk = pk.replace("\\n", "\n")
+    raw_secrets = st.secrets["gcp_service_account"]
+    if isinstance(raw_secrets, str):
+        creds_dict = json.loads(raw_secrets)
+    else:
+        creds_dict = dict(raw_secrets)
         
-        # PEMのヘッダー/フッター部分と鍵本体を整理してパディングズレを防止
-        if "-----BEGIN PRIVATE KEY-----" in pk:
-            lines = [line.strip() for line in pk.strip().split("\n") if line.strip()]
-            header = "-----BEGIN PRIVATE KEY-----"
-            footer = "-----END PRIVATE KEY-----"
-            body_lines = [l for l in lines if not l.startswith("-----")]
-            body = "".join(body_lines)
-            
-            # Base64パディング(=)の補正
-            missing_padding = len(body) % 4
-            if missing_padding:
-                body += "=" * (4 - missing_padding)
-                
-            # 64文字ごとに改行して正しいPEM形式を再構築
-            chunked_body = "\n".join([body[i:i+64] for i in range(0, len(body), 64)])
-            creds_dict["private_key"] = f"{header}\n{chunked_body}\n{footer}\n"
-
     creds = Credentials.from_service_account_info(
         creds_dict,
         scopes=SCOPE
