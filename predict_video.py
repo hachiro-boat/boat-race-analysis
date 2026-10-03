@@ -6,10 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # --- 1. Google スプレッドシート接続設定 ---
-# ご自身のスプレッドシートURL（/d/ と /edit の間の文字列）に置き換えてください
 SPREADSHEET_ID = "1uPIw3EBMDd3HYnaAuoAomCCC6eVui85P6bpxbDnaBCc"
-
-import json
 
 def get_gspread_client():
     """Streamlit Secrets から Google サービスアカウント認証情報を取得"""
@@ -41,10 +38,24 @@ def load_data_from_sheets():
         return []
 
 def append_data_to_sheets(racer_name, gap_pattern, race_info_str):
-    """スプレッドシートに1行データを追加"""
+    """スプレッドシートに重複チェックを行ってから1行データを追加"""
     try:
         client = get_gspread_client()
         sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+        
+        # --- 重複チェック ---
+        existing_rows = sheet.get_all_values()
+        new_key = (str(racer_name).strip(), str(gap_pattern).strip(), str(race_info_str).strip())
+        
+        # 2行目（インデックス1）以降の既存データと照合
+        for row in existing_rows[1:]:
+            if len(row) >= 3:
+                existing_key = (str(row[0]).strip(), str(row[1]).strip(), str(row[2]).strip())
+                if new_key == existing_key:
+                    st.warning(f"⚠️ 同一データ（{racer_name} / {gap_pattern} / {race_info_str}）は既に登録されているため、追加をスキップしました。")
+                    return False
+        
+        # 重複がなければ追加
         sheet.append_row([racer_name, gap_pattern, race_info_str])
         return True
     except Exception as e:
@@ -240,7 +251,7 @@ if input_password == ADMIN_PASSWORD:
         with col_stadium:
             stadium = st.selectbox("開催場（全国24場）", BOAT_RACE_STADIUMS)
         with col_rank:
-            rank = st.selectbox("着順", ["1着", "2着", "3着", "4着", "5着", "6着", "転覆・落水・F等"])
+            stadium_rank = st.selectbox("着順", ["1着", "2着", "3着", "4着", "5着", "6着", "転覆・落水・F等"])
 
         col_year, col_month = st.columns(2)
         current_year = datetime.now().year
@@ -255,9 +266,9 @@ if input_password == ADMIN_PASSWORD:
         if not racer_name.strip():
             st.error("選手名を入力してください。")
         else:
-            race_info_str = f"{year}年{month} / {stadium} / {rank}"
+            race_info_str = f"{year}年{month} / {stadium} / {stadium_rank}"
             
-            # スプレッドシートへ直接書き込み
+            # 重複チェック付きでスプレッドシートへ書き込み
             if append_data_to_sheets(racer_name.strip(), gap_pattern, race_info_str):
                 st.success(f"「{racer_name}」選手のデータをスプレッドシートに自動保存しました！")
                 st.rerun()
@@ -289,11 +300,14 @@ if input_password == ADMIN_PASSWORD:
             try:
                 imported_df = pd.read_csv(uploaded_csv)
                 if st.button("このデータをスプレッドシートに追加・復元する"):
-                    client = get_gspread_client()
-                    sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+                    added_count = 0
                     for _, row in imported_df.iterrows():
-                        sheet.append_row([row.get("選手名", ""), row.get("進入パターン", ""), row.get("レース情報", "")])
-                    st.success("スプレッドシートへの復元・統合が完了しました！")
+                        r_name = str(row.get("選手名", "")).strip()
+                        g_pat = str(row.get("進入パターン", "")).strip()
+                        r_info = str(row.get("レース情報", "")).strip()
+                        if r_name and append_data_to_sheets(r_name, g_pat, r_info):
+                            added_count += 1
+                    st.success(f"スプレッドシートへの復元・統合が完了しました！（{added_count}件新規追加）")
                     st.rerun()
             except Exception as e:
                 st.error("CSVファイルの読み込みに失敗しました。")
